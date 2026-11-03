@@ -1,4 +1,4 @@
-name: Bud APK
+name: Build APK
 
 on:
   workflow_dispatch:
@@ -11,11 +11,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Find project (repo files or zip)
+      - name: Find Project (Repo files or Zip)
         run: |
           ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
           if [ -n "$ZIP" ]; then
@@ -26,8 +27,13 @@ jobs:
           else
             SEARCH=.
           fi
+          
           GRADLEW=$(find "$SEARCH" -maxdepth 3 -name gradlew | head -n 1)
-          if [ -z "$GRADLEW" ]; then echo "gradlew not found. Is this an Android project?"; exit 1; fi
+          if [ -z "$GRADLEW" ]; then 
+            echo "Error: gradlew not found. Is this an Android project?"
+            exit 1 
+          fi
+          
           echo "PROJECT_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
@@ -39,38 +45,39 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Accept Android SDK licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-
-      - name: Create debug keystore if missing
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Accept Android SDK Licenses
         run: |
-          [ -f debug.keystore ] || keytool -genkeypair -v -keystore debug.keystore \
-            -storepass android -keypass android -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - name: Build debug APK
+      - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Collect APK
+      - name: Collect and Rename APK
         run: |
           mkdir -p out
-          APK=$(find "$PROJECT_DIR" -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          # বিল্ড হওয়া APK খুঁজে বের করা
+          APK=$(find . -type f -name '*.apk' | grep 'debug' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "Error: APK file not found!"
+            exit 1
+          fi
           cp "$APK" out/app.apk
+          echo "APK successfully copied to out/app.apk"
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: apk
+          name: app-debug-apk
           path: out/app.apk
 
-      - name: Publish release (direct APK download)
+      - name: Publish Release (Direct APK Download)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: APK build ${{ github.run_number }}
+          name: "App Debug Build #${{ github.run_number }}"
           files: out/app.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
