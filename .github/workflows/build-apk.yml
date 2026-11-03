@@ -16,30 +16,34 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Find Project (Repo files or Zip)
+      - name: Prepare Project and Find Gradle
         run: |
+          # যদি রুট ফোল্ডারে জিপ ফাইল থাকে তবে তা এক্সট্রাক্ট করবে
           ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
           if [ -n "$ZIP" ]; then
             echo "Unzipping: $ZIP"
-            mkdir -p proj
-            unzip -q -o "$ZIP" -d proj
-            SEARCH=proj
+            mkdir -p extracted_proj
+            unzip -q -o "$ZIP" -d extracted_proj
+            SEARCH_DIR="extracted_proj"
           else
-            SEARCH=.
+            SEARCH_DIR="."
           fi
           
-          GRADLEW=$(find "$SEARCH" -maxdepth 3 -name gradlew | head -n 1)
-          if [ -z "$GRADLEW" ]; then 
-            echo "Error: gradlew not found. Is this an Android project?"
-            exit 1 
+          # gradlew ফাইলটি খুঁজে বের করা
+          GRADLEW=$(find "$SEARCH_DIR" -name "gradlew" -type f | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "Error: gradlew file not found! Please check if your project is a valid Android project."
+            exit 1
           fi
           
-          echo "PROJECT_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Found Android project at: $PROJECT_DIR"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Gradle
@@ -55,17 +59,19 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Collect and Rename APK
+      - name: Locate and Collect APK
         run: |
           mkdir -p out
-          # বিল্ড হওয়া APK খুঁজে বের করা
-          APK=$(find . -type f -name '*.apk' | grep 'debug' | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "Error: APK file not found!"
+          # যেকোনো সাব-ফোল্ডার থেকে ডিবাগ এপিকে খুঁজে বের করা
+          APK_FILE=$(find "${{ env.PROJECT_DIR }}" -type f -name "*.apk" | grep "debug" | head -n 1)
+          
+          if [ -z "$APK_FILE" ]; then
+            echo "Error: APK file could not be located!"
             exit 1
           fi
-          cp "$APK" out/app.apk
-          echo "APK successfully copied to out/app.apk"
+          
+          cp "$APK_FILE" out/app.apk
+          echo "APK successfully copied from $APK_FILE to out/app.apk"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
