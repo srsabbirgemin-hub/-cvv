@@ -11,79 +11,66 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare Project and Find Gradle
+      - name: Find project (repo files or zip)
         run: |
-          # যদি রুট ফোল্ডারে জিপ ফাইল থাকে তবে তা এক্সট্রাক্ট করবে
           ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
           if [ -n "$ZIP" ]; then
             echo "Unzipping: $ZIP"
-            mkdir -p extracted_proj
-            unzip -q -o "$ZIP" -d extracted_proj
-            SEARCH_DIR="extracted_proj"
+            mkdir -p proj
+            unzip -q -o "$ZIP" -d proj
+            SEARCH=proj
           else
-            SEARCH_DIR="."
+            SEARCH=.
           fi
-          
-          # gradlew ফাইলটি খুঁজে বের করা
-          GRADLEW=$(find "$SEARCH_DIR" -name "gradlew" -type f | head -n 1)
-          if [ -z "$GRADLEW" ]; then
-            echo "Error: gradlew file not found! Please check if your project is a valid Android project."
-            exit 1
-          fi
-          
-          PROJECT_DIR=$(dirname "$GRADLEW")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Found Android project at: $PROJECT_DIR"
+          GRADLEW=$(find "$SEARCH" -maxdepth 3 -name gradlew | head -n 1)
+          if [ -z "$GRADLEW" ]; then echo "gradlew not found. Is this an Android project?"; exit 1; fi
+          echo "PROJECT_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - name: Build Debug APK
+      - name: Create debug keystore if missing
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          [ -f debug.keystore ] || keytool -genkeypair -v -keystore debug.keystore \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Locate and Collect APK
+      - name: Collect APK
         run: |
           mkdir -p out
-          # যেকোনো সাব-ফোল্ডার থেকে ডিবাগ এপিকে খুঁজে বের করা
-          APK_FILE=$(find "${{ env.PROJECT_DIR }}" -type f -name "*.apk" | grep "debug" | head -n 1)
-          
-          if [ -z "$APK_FILE" ]; then
-            echo "Error: APK file could not be located!"
-            exit 1
-          fi
-          
-          cp "$APK_FILE" out/app.apk
-          echo "APK successfully copied from $APK_FILE to out/app.apk"
+          APK=$(find "$PROJECT_DIR" -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          cp "$APK" out/app.apk
 
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: apk
           path: out/app.apk
 
-      - name: Publish Release (Direct APK Download)
+      - name: Publish release (direct APK download)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: "App Debug Build #${{ github.run_number }}"
+          name: APK build ${{ github.run_number }}
           files: out/app.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
