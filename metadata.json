@@ -1,6 +1,6 @@
 {
-  "name": "Aether AI",
-  "description": "Floating AI voice and chat assistant with multitasking bubble, on-device actions, voice mode, and customizable LLM models.",
+  "name": "SRS AI",
+  "description": "SRS AI - High-speed floating AI voice and chat assistant, autonomous multitask agent, 100+ AI tools, and system automation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

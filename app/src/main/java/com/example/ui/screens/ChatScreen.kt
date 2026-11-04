@@ -111,14 +111,14 @@ fun ChatScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = currentSession?.title ?: "Chat with Aether",
+                        text = currentSession?.title ?: "Chat with SRS AI",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
                         maxLines = 1
                     )
                     Text(
-                        text = if (isThinking) "Aether is thinking..." else "${messages.size} messages",
+                        text = if (isThinking) "SRS AI is thinking..." else "${messages.size} messages",
                         fontSize = 11.sp,
                         color = ElectricCyan
                     )
@@ -158,7 +158,7 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Aether AI Assistant",
+                        text = "SRS AI Assistant",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -261,7 +261,7 @@ fun ChatScreen(
                                 GlowingOrbCanvas(state = OrbVoiceState.THINKING, size = 24.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Aether is synthesizing response...",
+                                    text = "SRS AI is synthesizing response...",
                                     fontSize = 12.sp,
                                     color = ElectricCyan
                                 )

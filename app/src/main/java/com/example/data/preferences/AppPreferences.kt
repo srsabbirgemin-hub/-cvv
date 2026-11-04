@@ -142,4 +142,13 @@ class AppPreferences(context: Context) {
         prefs.edit().putBoolean("free_ai_mode", enabled).apply()
         _freeModeFlow.value = enabled
     }
+
+    fun isFreeMovementEnabled(): Boolean = prefs.getBoolean("bubble_free_movement", true)
+    fun setFreeMovementEnabled(enabled: Boolean) = prefs.edit().putBoolean("bubble_free_movement", enabled).apply()
+
+    fun getBubbleLastX(): Int = prefs.getInt("bubble_last_x", -1)
+    fun setBubbleLastX(x: Int) = prefs.edit().putInt("bubble_last_x", x).apply()
+
+    fun getBubbleLastY(): Int = prefs.getInt("bubble_last_y", -1)
+    fun setBubbleLastY(y: Int) = prefs.edit().putInt("bubble_last_y", y).apply()
 }

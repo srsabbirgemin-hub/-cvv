@@ -125,16 +125,16 @@ fun HomeScreen(
         ) {
             Column {
                 Text(
-                    text = "AETHER AI",
-                    fontSize = 22.sp,
+                    text = "SRS AI",
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.5.sp,
-                    color = TextPrimary
+                    color = ElectricCyan
                 )
                 Text(
-                    text = "Floating Voice & Multitask Agent",
+                    text = "Floating Voice & Multitask Agent • 100+ Features",
                     fontSize = 12.sp,
-                    color = ElectricCyan
+                    color = TextPrimary
                 )
             }
 
@@ -186,7 +186,7 @@ fun HomeScreen(
         Text(
             text = when (voiceState) {
                 OrbVoiceState.LISTENING -> "Listening to your voice..."
-                OrbVoiceState.THINKING -> "Aether is thinking..."
+                OrbVoiceState.THINKING -> "SRS AI is thinking..."
                 OrbVoiceState.SPEAKING -> "Speaking response..."
                 OrbVoiceState.IDLE -> "Tap orb to speak command"
             },
@@ -309,6 +309,44 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Chat Window", fontSize = 12.sp, color = TextPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Pure Background Voice & Action Mode Button (শুদ্ধ ব্যাকগ্রাউন্ড এআই মোড)
+                Button(
+                    onClick = {
+                        viewModel.launchPureBackgroundMode()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonPurple.copy(alpha = 0.25f)
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, NeonGreen),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("launch_pure_background_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = NeonGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text(
+                            text = "🎙️ শুদ্ধ ব্যাকগ্রাউন্ড এআই মোড (Pure Background)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "স্ক্রিনে কোনো বাবল ছাড়া ব্যাকগ্রাউন্ডে কথা বলবে ও কাজ করবে",
+                            fontSize = 10.sp,
+                            color = ElectricCyan
+                        )
                     }
                 }
             }
@@ -530,7 +568,7 @@ fun HomeScreen(
                             }
                         }
                         Text(
-                            text = "Aether AI Official Page • আপডেট ও সাপোর্ট",
+                            text = "SRS AI Official Page • আপডেট ও সাপোর্ট",
                             fontSize = 11.sp,
                             color = TextSecondary
                         )

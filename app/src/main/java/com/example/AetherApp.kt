@@ -44,10 +44,10 @@ class AetherApp : Application() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Aether Floating Assistant",
+                "SRS AI Floating Assistant",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps Aether AI floating bubble and voice assistant active"
+                description = "Keeps SRS AI floating bubble and voice assistant active"
                 setShowBadge(false)
             }
             val nm = getSystemService(NotificationManager::class.java)

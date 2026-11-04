@@ -55,7 +55,8 @@ import kotlin.math.hypot
 enum class OverlayMode {
     BUBBLE,
     EXPANDED_CHAT,
-    VOICE_MODE
+    VOICE_MODE,
+    PURE_BACKGROUND
 }
 
 class FloatingAgentService : Service() {
@@ -144,13 +145,13 @@ class FloatingAgentService : Service() {
         }
 
         app.voiceManager.onContinuousListenRequest = {
-            if (currentMode.value == OverlayMode.VOICE_MODE && isRunning) {
+            if ((currentMode.value == OverlayMode.VOICE_MODE || currentMode.value == OverlayMode.PURE_BACKGROUND) && isRunning) {
                 app.voiceManager.startListening()
             }
         }
     }
 
-    private fun showNotification() {
+    private fun showNotification(isPureBackgroundMode: Boolean = false) {
         val stopIntent = Intent(this, FloatingAgentService::class.java).apply {
             action = ACTION_STOP
         }
@@ -159,11 +160,11 @@ class FloatingAgentService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val voiceIntent = Intent(this, FloatingAgentService::class.java).apply {
-            action = ACTION_VOICE_MODE
+        val actionIntent = Intent(this, FloatingAgentService::class.java).apply {
+            action = if (isPureBackgroundMode) ACTION_BACKGROUND_LISTEN else ACTION_VOICE_MODE
         }
-        val voicePending = PendingIntent.getService(
-            this, 102, voiceIntent,
+        val actionPending = PendingIntent.getService(
+            this, 102, actionIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -175,12 +176,16 @@ class FloatingAgentService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val title = if (isPureBackgroundMode) "🎙️ শুদ্ধ ব্যাকগ্রাউন্ড এআই সক্রিয়" else "SRS AI Active"
+        val subtitle = if (isPureBackgroundMode) "ব্যাকগ্রাউন্ডে কথা বলা ও কাজ করতে প্রস্তুত" else "Floating AI assistant ready over all apps"
+        val actionLabel = if (isPureBackgroundMode) "কথা বলুন (Speak)" else "Voice Mode"
+
         val notification: Notification = NotificationCompat.Builder(this, AetherApp.CHANNEL_ID)
-            .setContentTitle("Aether AI Active")
-            .setContentText("Floating AI assistant ready over all apps")
+            .setContentTitle(title)
+            .setContentText(subtitle)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(openAppPending)
-            .addAction(R.drawable.ic_launcher_foreground, "Voice Mode", voicePending)
+            .addAction(R.drawable.ic_launcher_foreground, actionLabel, actionPending)
             .addAction(R.drawable.ic_launcher_foreground, "Stop", stopPending)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -203,8 +208,35 @@ class FloatingAgentService : Service() {
             ACTION_STOP -> stopSelf()
             ACTION_VOICE_MODE -> switchToVoiceMode()
             ACTION_EXPAND_CHAT -> switchToChatMode()
+            ACTION_PURE_BACKGROUND -> switchToPureBackgroundMode()
+            ACTION_BACKGROUND_LISTEN -> triggerBackgroundListen()
         }
         return START_STICKY
+    }
+
+    private fun switchToPureBackgroundMode() {
+        currentMode.value = OverlayMode.PURE_BACKGROUND
+        isPureBackground = true
+        removeBubble()
+        removeChatWindow()
+        removeVoiceMode()
+        dismissTargetView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (_: Exception) {}
+        }
+        dismissTargetView = null
+        app.preferences.setVoiceReplyEnabled(true)
+        showNotification(isPureBackgroundMode = true)
+        app.voiceManager.speak("শুদ্ধ ব্যাকগ্রাউন্ড এআই সক্রিয় হয়েছে। আমি ব্যাকগ্রাউন্ডে কথা বলব এবং কাজ করব।") {
+            app.voiceManager.startListening()
+        }
+    }
+
+    private fun triggerBackgroundListen() {
+        app.voiceManager.speak("বলুন, আমি শুনছি।") {
+            app.voiceManager.startListening()
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -214,19 +246,26 @@ class FloatingAgentService : Service() {
     private fun showBubble() {
         if (bubbleComposeView != null) return
 
-        val bubbleSize = (app.preferences.getBubbleSize() * resources.displayMetrics.density).toInt()
+        var currentBubblePixelSize = (app.preferences.getBubbleSize() * resources.displayMetrics.density).toInt()
+        val savedX = app.preferences.getBubbleLastX()
+        val savedY = app.preferences.getBubbleLastY()
 
         val params = WindowManager.LayoutParams(
-            bubbleSize,
-            bubbleSize,
+            currentBubblePixelSize,
+            currentBubblePixelSize,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = screenWidth - bubbleSize - 20
-            y = screenHeight / 3
+            if (savedX != -1 && savedY != -1) {
+                x = savedX.coerceIn(0, (screenWidth - currentBubblePixelSize).coerceAtLeast(0))
+                y = savedY.coerceIn(40, (screenHeight - currentBubblePixelSize - 80).coerceAtLeast(40))
+            } else {
+                x = screenWidth - currentBubblePixelSize - 20
+                y = screenHeight / 3
+            }
         }
         bubbleLayoutParams = params
 
@@ -237,18 +276,36 @@ class FloatingAgentService : Service() {
                     val voiceState by app.voiceManager.voiceState.collectAsState()
                     val audioRms by app.voiceManager.audioRms.collectAsState()
                     val opacity by app.preferences.bubbleOpacityFlow.collectAsState()
+                    val bubbleSizeDp by app.preferences.bubbleSizeFlow.collectAsState()
 
                     FloatingBubbleOverlay(
                         state = voiceState,
                         audioRms = audioRms,
                         opacity = opacity,
+                        sizeDp = bubbleSizeDp,
                         onTap = { switchToChatMode() }
                     )
                 }
             }
         }
 
-        // Handle Touch & Drag
+        // Live Dynamic Resize Observer
+        serviceScope.launch {
+            app.preferences.bubbleSizeFlow.collect { sizeDp ->
+                currentBubblePixelSize = (sizeDp * resources.displayMetrics.density).toInt()
+                bubbleLayoutParams?.let { lp ->
+                    lp.width = currentBubblePixelSize
+                    lp.height = currentBubblePixelSize
+                    bubbleComposeView?.let { cv ->
+                        try {
+                            windowManager.updateViewLayout(cv, lp)
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+
+        // Handle Touch & Drag (নড়াচড়া ও নিজের মতো প্লেসমেন্ট)
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -282,8 +339,8 @@ class FloatingAgentService : Service() {
                         // Check proximity to bottom dismiss target
                         val dismissCenterY = screenHeight - 120
                         val dismissCenterX = screenWidth / 2
-                        val currentBubbleCenterY = params.y + bubbleSize / 2
-                        val currentBubbleCenterX = params.x + bubbleSize / 2
+                        val currentBubbleCenterY = params.y + currentBubblePixelSize / 2
+                        val currentBubbleCenterX = params.x + currentBubblePixelSize / 2
 
                         val dist = hypot(
                             (currentBubbleCenterX - dismissCenterX).toDouble(),
@@ -298,8 +355,8 @@ class FloatingAgentService : Service() {
                     if (isDragging) {
                         val dismissCenterY = screenHeight - 120
                         val dismissCenterX = screenWidth / 2
-                        val currentBubbleCenterY = params.y + bubbleSize / 2
-                        val currentBubbleCenterX = params.x + bubbleSize / 2
+                        val currentBubbleCenterY = params.y + currentBubblePixelSize / 2
+                        val currentBubbleCenterX = params.x + currentBubblePixelSize / 2
                         val dist = hypot(
                             (currentBubbleCenterX - dismissCenterX).toDouble(),
                             (currentBubbleCenterY - dismissCenterY).toDouble()
@@ -311,10 +368,17 @@ class FloatingAgentService : Service() {
                             return@setOnTouchListener true
                         }
 
-                        // Snap to left or right screen edge
-                        val middle = screenWidth / 2
-                        params.x = if (params.x + bubbleSize / 2 < middle) 16 else screenWidth - bubbleSize - 16
-                        params.y = params.y.coerceIn(80, screenHeight - bubbleSize - 120)
+                        // Free movement anywhere on screen as per user's wish (নিজের মতো যেকোনো জায়গায় রাখা)
+                        if (app.preferences.isFreeMovementEnabled()) {
+                            params.x = params.x.coerceIn(8, screenWidth - currentBubblePixelSize - 8)
+                            params.y = params.y.coerceIn(40, screenHeight - currentBubblePixelSize - 80)
+                        } else {
+                            val middle = screenWidth / 2
+                            params.x = if (params.x + currentBubblePixelSize / 2 < middle) 16 else screenWidth - currentBubblePixelSize - 16
+                            params.y = params.y.coerceIn(80, screenHeight - currentBubblePixelSize - 120)
+                        }
+                        app.preferences.setBubbleLastX(params.x)
+                        app.preferences.setBubbleLastY(params.y)
                         windowManager.updateViewLayout(composeView, params)
                     } else {
                         // Clicked -> Expand chat
@@ -434,6 +498,7 @@ class FloatingAgentService : Service() {
                     val voiceState by app.voiceManager.voiceState.collectAsState()
                     val audioRms by app.voiceManager.audioRms.collectAsState()
                     val opacity by app.preferences.bubbleOpacityFlow.collectAsState()
+                    val currentBubbleSize by app.preferences.bubbleSizeFlow.collectAsState()
 
                     FloatingChatWindow(
                         messages = messages,
@@ -441,6 +506,9 @@ class FloatingAgentService : Service() {
                         voiceState = voiceState,
                         audioRms = audioRms,
                         initialOpacity = opacity,
+                        currentBubbleSize = currentBubbleSize,
+                        screenWidthPx = screenWidth,
+                        screenHeightPx = screenHeight,
                         onSendMessage = { text -> handleUserInput(text, isVoice = false) },
                         onStartVoice = { switchToVoiceMode() },
                         onMinimize = {
@@ -461,9 +529,22 @@ class FloatingAgentService : Service() {
                             windowManager.updateViewLayout(this, params)
                         },
                         onResizeDelta = { dx, dy ->
-                            params.width = (params.width + dx).coerceIn(300, screenWidth)
-                            params.height = (params.height + dy).coerceIn(350, screenHeight - 100)
+                            params.width = (params.width + dx).coerceIn(280, screenWidth)
+                            params.height = (params.height + dy).coerceIn(340, screenHeight - 100)
                             windowManager.updateViewLayout(this, params)
+                        },
+                        onDragDelta = { dx, dy ->
+                            params.x = (params.x + dx).coerceIn(-screenWidth / 2, screenWidth / 2)
+                            params.y = (params.y + dy).coerceIn(-screenHeight / 2, screenHeight / 2)
+                            windowManager.updateViewLayout(this, params)
+                        },
+                        onSetPresetSize = { targetWidth, targetHeight ->
+                            params.width = targetWidth.coerceIn(280, screenWidth)
+                            params.height = targetHeight.coerceIn(340, screenHeight - 100)
+                            windowManager.updateViewLayout(this, params)
+                        },
+                        onBubbleSizeChange = { newSize ->
+                            app.preferences.setBubbleSize(newSize)
                         }
                     )
                 }
@@ -533,6 +614,11 @@ class FloatingAgentService : Service() {
                             app.voiceManager.stopListening()
                             removeVoiceMode()
                             showBubble()
+                        },
+                        onDragDelta = { dx, dy ->
+                            params.x = (params.x + dx).coerceIn(-screenWidth / 2, screenWidth / 2)
+                            params.y = (params.y + dy).coerceIn(0, screenHeight - 200)
+                            windowManager.updateViewLayout(this, params)
                         }
                     )
                 }
@@ -634,11 +720,11 @@ class FloatingAgentService : Service() {
                 )
                 app.chatRepository.saveMessage(assistantMsg)
 
-                // 7. Voice Reply
-                if (isVoice || app.preferences.isVoiceReplyEnabled()) {
+                // 7. Voice Reply (কথা বলবে এবং কাজ সম্পন্ন করবে)
+                if (isVoice || app.preferences.isVoiceReplyEnabled() || currentMode.value == OverlayMode.PURE_BACKGROUND) {
                     app.voiceManager.speak(response.replyText) {
-                        // After speaking completes, if still in voice mode, listen again!
-                        if (currentMode.value == OverlayMode.VOICE_MODE) {
+                        // After speaking completes, stay ready to listen
+                        if (currentMode.value == OverlayMode.VOICE_MODE || currentMode.value == OverlayMode.PURE_BACKGROUND) {
                             app.voiceManager.startListening()
                         }
                     }
@@ -656,7 +742,7 @@ class FloatingAgentService : Service() {
                 )
                 app.chatRepository.saveMessage(errorMsg)
 
-                if (isVoice) {
+                if (isVoice || currentMode.value == OverlayMode.PURE_BACKGROUND) {
                     app.voiceManager.speak("Sorry, I encountered an error connecting to the AI service.")
                 } else {
                     app.voiceManager.setIdle()
@@ -668,6 +754,7 @@ class FloatingAgentService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        isPureBackground = false
         serviceScope.cancel()
         removeBubble()
         removeChatWindow()
@@ -688,8 +775,13 @@ class FloatingAgentService : Service() {
         const val ACTION_STOP = "com.example.action.STOP_FLOATING"
         const val ACTION_VOICE_MODE = "com.example.action.VOICE_MODE"
         const val ACTION_EXPAND_CHAT = "com.example.action.EXPAND_CHAT"
+        const val ACTION_PURE_BACKGROUND = "com.example.action.PURE_BACKGROUND"
+        const val ACTION_BACKGROUND_LISTEN = "com.example.action.BACKGROUND_LISTEN"
 
         var isRunning = false
+            private set
+
+        var isPureBackground = false
             private set
     }
 }

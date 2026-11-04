@@ -129,6 +129,7 @@ fun SettingsScreen(
     var voiceSpeed by remember { mutableFloatStateOf(prefs.getVoiceSpeed()) }
 
     var autoStartBoot by remember { mutableStateOf(prefs.isAutoStartOnBoot()) }
+    var freeMovement by remember { mutableStateOf(prefs.isFreeMovementEnabled()) }
 
     Column(
         modifier = modifier
@@ -582,15 +583,83 @@ fun SettingsScreen(
             border = androidx.compose.foundation.BorderStroke(1.dp, CardBorderGradient)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Bubble Size: ${bubbleSize}dp", fontSize = 12.sp, color = TextSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("ফ্লোটিং বাবল সাইজ (বড়-ছোট করুন): ${bubbleSize}dp", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Quick Preset Chips: ছোট, মাঝারি, বড়, বিশাল
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val presets = listOf(
+                        "ছোট (48dp)" to 48,
+                        "মাঝারি (64dp)" to 64,
+                        "বড় (80dp)" to 80,
+                        "বিশাল (96dp)" to 96
+                    )
+                    for ((label, size) in presets) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (bubbleSize == size) NeonPurple else SurfaceNavy)
+                                .border(1.dp, if (bubbleSize == size) ElectricCyan else GlassBorder, RoundedCornerShape(10.dp))
+                                .clickable { prefs.setBubbleSize(size) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (bubbleSize == size) FontWeight.Bold else FontWeight.Normal,
+                                color = if (bubbleSize == size) Color.White else TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Slider(
                     value = bubbleSize.toFloat(),
                     onValueChange = { prefs.setBubbleSize(it.toInt()) },
-                    valueRange = 48f..84f,
+                    valueRange = 40f..104f,
                     colors = SliderDefaults.colors(thumbColor = ElectricCyan, activeTrackColor = NeonPurple)
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Free Movement Toggle (স্ক্রিনে নিজের মতো অবাধে নড়াচড়া)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("অবাধে নড়াচড়া (Free Movement)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Text(
+                            text = if (freeMovement) "বাবল স্ক্রিনের যেখানে ইচ্ছা সেখানেই থাকবে (প্রান্তে আটকাবে না)" else "ছেড়ে দিলে স্বয়ংক্রিয়ভাবে স্ক্রিনের বাম বা ডান প্রান্তে আটকে থাকবে",
+                            fontSize = 11.sp,
+                            color = if (freeMovement) NeonGreen else TextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = freeMovement,
+                        onCheckedChange = {
+                            freeMovement = it
+                            prefs.setFreeMovementEnabled(it)
+                        },
+                        colors = SwitchDefaults.colors(checkedTrackColor = NeonPurple)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text("Bubble & Window Opacity: ${(bubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = TextSecondary)
                 Slider(
@@ -619,6 +688,25 @@ fun SettingsScreen(
                         },
                         colors = SwitchDefaults.colors(checkedTrackColor = NeonPurple)
                     )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Instructions Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceNavy.copy(alpha = 0.8f))
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Text("💡 নড়াচড়া ও বড়-ছোট করার নির্দেশিকা:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ElectricCyan)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("১. ফ্লোটিং বাবল ধরে স্ক্রিনের যেকোনো স্থানে টেনে নিয়ে রাখুন।", fontSize = 10.sp, color = TextSecondary)
+                        Text("২. চ্যাট উইন্ডো খুললে উপরের 'নড়াচড়া করতে টানুন' বারে হাত দিয়ে পুরো উইন্ডো যেকোনো জায়গায় সরাতে পারবেন।", fontSize = 10.sp, color = TextSecondary)
+                        Text("৩. উইন্ডো হেডারের 📐 সাইজ আইকনে ট্যাপ করে মুহূর্তেই ছোট, মাঝারি, বড় বা ফুল সাইজ করতে পারবেন।", fontSize = 10.sp, color = TextSecondary)
+                    }
                 }
             }
         }

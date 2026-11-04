@@ -26,10 +26,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ZoomInMap
@@ -50,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,6 +89,7 @@ fun FloatingBubbleOverlay(
     state: OrbVoiceState,
     audioRms: Float,
     opacity: Float,
+    sizeDp: Int = 64,
     onTap: () -> Unit
 ) {
     Box(
@@ -95,7 +101,7 @@ fun FloatingBubbleOverlay(
         GlowingOrbCanvas(
             state = state,
             audioRms = audioRms,
-            size = 64.dp,
+            size = sizeDp.dp,
             onClick = onTap,
             modifier = Modifier.clip(CircleShape)
         )
@@ -115,11 +121,19 @@ fun FloatingChatWindow(
     onClose: () -> Unit,
     onFocusChanged: (Boolean) -> Unit,
     onResizeDelta: (Int, Int) -> Unit,
+    onDragDelta: ((Int, Int) -> Unit)? = null,
+    onSetPresetSize: ((Int, Int) -> Unit)? = null,
+    onBubbleSizeChange: ((Int) -> Unit)? = null,
+    currentBubbleSize: Int = 64,
+    screenWidthPx: Int = 1080,
+    screenHeightPx: Int = 2400,
     modifier: Modifier = Modifier
 ) {
     var textInput by remember { mutableStateOf("") }
     var windowOpacity by remember { mutableFloatStateOf(initialOpacity) }
     var showOpacitySlider by remember { mutableStateOf(false) }
+    var showSizeControls by remember { mutableStateOf(false) }
+    var dynamicBubbleSize by remember { mutableIntStateOf(currentBubbleSize) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {
@@ -137,12 +151,48 @@ fun FloatingChatWindow(
         shadowElevation = 12.dp
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            // Drag-to-move handle bar across top
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SurfaceCard.copy(alpha = 0.95f))
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta?.invoke(dragAmount.x.toInt(), dragAmount.y.toInt())
+                        }
+                    }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "নড়াচড়া করতে টানুন (Drag to Move Window)",
+                    tint = ElectricCyan.copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "নড়াচড়া করতে টানুন (Drag to Move)",
+                    fontSize = 10.sp,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
             // Header bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SurfaceNavy.copy(alpha = 0.9f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta?.invoke(dragAmount.x.toInt(), dragAmount.y.toInt())
+                        }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -155,7 +205,7 @@ fun FloatingChatWindow(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Aether AI",
+                            text = "SRS AI",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -169,8 +219,28 @@ fun FloatingChatWindow(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Size Presets & Bubble Size
                     IconButton(
-                        onClick = { showOpacitySlider = !showOpacitySlider },
+                        onClick = {
+                            showSizeControls = !showSizeControls
+                            if (showSizeControls) showOpacitySlider = false
+                        },
+                        modifier = Modifier.size(32.dp).testTag("chat_size_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AspectRatio,
+                            contentDescription = "বড়-ছোট ও সাইজ (Resize)",
+                            tint = if (showSizeControls) ElectricCyan else TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Opacity
+                    IconButton(
+                        onClick = {
+                            showOpacitySlider = !showOpacitySlider
+                            if (showOpacitySlider) showSizeControls = false
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -203,6 +273,134 @@ fun FloatingChatWindow(
                             tint = NeonPink,
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+                }
+            }
+
+            // Window & Bubble Size Controls Panel
+            AnimatedVisibility(visible = showSizeControls) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(SurfaceCard.copy(alpha = 0.95f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    // Window Size Presets
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("উইন্ডো সাইজ:", fontSize = 11.sp, color = ElectricCyan, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Compact
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SurfaceNavy)
+                                    .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSetPresetSize?.invoke(
+                                            (screenWidthPx * 0.72f).toInt().coerceAtMost(320),
+                                            (screenHeightPx * 0.44f).toInt().coerceAtMost(430)
+                                        )
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Text("ছোট", fontSize = 10.sp, color = TextPrimary)
+                            }
+                            // Standard
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SurfaceNavy)
+                                    .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSetPresetSize?.invoke(
+                                            (screenWidthPx * 0.88f).toInt().coerceAtMost(420),
+                                            (screenHeightPx * 0.60f).toInt().coerceAtMost(620)
+                                        )
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Text("মাঝারি", fontSize = 10.sp, color = TextPrimary)
+                            }
+                            // Large
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SurfaceNavy)
+                                    .border(1.dp, GlassBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSetPresetSize?.invoke(
+                                            (screenWidthPx * 0.94f).toInt().coerceAtMost(520),
+                                            (screenHeightPx * 0.74f).toInt().coerceAtMost(760)
+                                        )
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Text("বড়", fontSize = 10.sp, color = TextPrimary)
+                            }
+                            // Full
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeonPurple.copy(alpha = 0.7f))
+                                    .clickable {
+                                        onSetPresetSize?.invoke(
+                                            screenWidthPx,
+                                            screenHeightPx - 80
+                                        )
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Text("ফুল", fontSize = 10.sp, color = Color.White)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Bubble Size Customizer
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("বাবল সাইজ: ${dynamicBubbleSize}dp", fontSize = 11.sp, color = TextSecondary)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    dynamicBubbleSize = (dynamicBubbleSize - 8).coerceAtLeast(40)
+                                    onBubbleSizeChange?.invoke(dynamicBubbleSize)
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, "Smaller", tint = TextPrimary, modifier = Modifier.size(16.dp))
+                            }
+                            Slider(
+                                value = dynamicBubbleSize.toFloat(),
+                                onValueChange = {
+                                    dynamicBubbleSize = it.toInt()
+                                    onBubbleSizeChange?.invoke(dynamicBubbleSize)
+                                },
+                                valueRange = 40f..104f,
+                                modifier = Modifier.width(110.dp),
+                                colors = SliderDefaults.colors(thumbColor = ElectricCyan, activeTrackColor = NeonPurple)
+                            )
+                            IconButton(
+                                onClick = {
+                                    dynamicBubbleSize = (dynamicBubbleSize + 8).coerceAtMost(104)
+                                    onBubbleSizeChange?.invoke(dynamicBubbleSize)
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Add, "Bigger", tint = TextPrimary, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -315,7 +513,7 @@ fun FloatingChatWindow(
                                 ) {
                                     GlowingOrbCanvas(state = OrbVoiceState.THINKING, size = 20.dp)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Aether is thinking...", color = ElectricCyan, fontSize = 12.sp)
+                                    Text("SRS AI is thinking...", color = ElectricCyan, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -471,7 +669,8 @@ fun FloatingVoiceModeOverlay(
     statusText: String,
     onToggleMute: () -> Unit,
     onMinimize: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onDragDelta: ((Int, Int) -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
@@ -483,9 +682,37 @@ fun FloatingVoiceModeOverlay(
         shadowElevation = 16.dp
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Drag-to-move handle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDragDelta?.invoke(dragAmount.x.toInt(), dragAmount.y.toInt())
+                        }
+                    }
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "নড়াচড়া করতে টানুন",
+                    tint = ElectricCyan.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "নড়াচড়া করতে টানুন (Drag)",
+                    fontSize = 9.sp,
+                    color = TextSecondary
+                )
+            }
+
             // Header with minimize and close
             Row(
                 modifier = Modifier.fillMaxWidth(),

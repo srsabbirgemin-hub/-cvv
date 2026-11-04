@@ -331,6 +331,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isServiceActive.value = true
     }
 
+    fun launchPureBackgroundMode() {
+        val context = getApplication<Application>()
+        val intent = Intent(context, FloatingAgentService::class.java).apply {
+            action = FloatingAgentService.ACTION_PURE_BACKGROUND
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+        _isServiceActive.value = true
+    }
+
     fun requestIgnoreBatteryOptimization() {
         val context = getApplication<Application>()
         try {

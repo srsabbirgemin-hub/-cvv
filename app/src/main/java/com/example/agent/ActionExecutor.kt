@@ -127,9 +127,16 @@ class ActionExecutor(private val context: Context) {
                 "read_clipboard" -> readClipboard()
                 "clear_clipboard" -> clearClipboard()
                 "daily_briefing" -> getDailyBriefing()
-                "translate", "translate_text" -> quickTranslate(target ?: extra ?: "", extra)
-                "nearby", "nearby_search" -> searchNearby(target ?: extra ?: "restaurants")
                 "speed_test" -> speedTest()
+
+                // Emergency & Turbo Features
+                "sos_torch", "strobe_torch" -> strobeFlashlight()
+                "emergency", "sos_call" -> callEmergency(target ?: "999")
+                "qr_scanner", "scan_qr" -> openQrScanner()
+                "dnd", "do_not_disturb" -> openDndSettings()
+                "battery_saver" -> openBatterySaver()
+                "time", "exact_time", "read_time" -> readExactTime()
+                "weather", "weather_forecast" -> getWeatherQuick()
 
                 else -> ExecutionResult.Failure("Unknown action: $actionType")
             }
@@ -539,7 +546,7 @@ class ActionExecutor(private val context: Context) {
 
     private fun copyToClipboard(text: String): ExecutionResult {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Aether AI", text)
+        val clip = ClipData.newPlainText("SRS AI", text)
         clipboard.setPrimaryClip(clip)
         return ExecutionResult.Success("Copied to clipboard: \"$text\"")
     }
@@ -554,7 +561,7 @@ class ActionExecutor(private val context: Context) {
             hour < 17 -> "Good afternoon"
             else -> "Good evening"
         }
-        val briefing = "$greeting! Today is $dateStr. Your battery is at $batteryPct%. Aether floating assistant is active and ready to help you multitask."
+        val briefing = "$greeting! Today is $dateStr. Your battery is at $batteryPct%. SRS AI floating assistant is active and ready to help you multitask."
         return ExecutionResult.Success(briefing)
     }
 
@@ -852,7 +859,7 @@ class ActionExecutor(private val context: Context) {
     private fun addCalendarEvent(title: String, description: String?): ExecutionResult {
         val intent = Intent(Intent.ACTION_INSERT).apply {
             data = CalendarContract.Events.CONTENT_URI
-            putExtra(CalendarContract.Events.TITLE, title.ifBlank { "Aether Reminder" })
+            putExtra(CalendarContract.Events.TITLE, title.ifBlank { "SRS AI Reminder" })
             if (!description.isNullOrBlank()) {
                 putExtra(CalendarContract.Events.DESCRIPTION, description)
             }
@@ -869,7 +876,7 @@ class ActionExecutor(private val context: Context) {
     private fun sendEmail(recipient: String, subject: String?, body: String?): ExecutionResult {
         val intent = Intent(Intent.ACTION_SENDTO).apply {
             data = Uri.parse("mailto:${Uri.encode(recipient.trim())}")
-            putExtra(Intent.EXTRA_SUBJECT, subject ?: "Note from Aether AI")
+            putExtra(Intent.EXTRA_SUBJECT, subject ?: "Note from SRS AI")
             putExtra(Intent.EXTRA_TEXT, body ?: "")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -966,5 +973,68 @@ class ActionExecutor(private val context: Context) {
         }
         context.startActivity(intent)
         return ExecutionResult.Success("Launching network speed test")
+    }
+
+    private fun strobeFlashlight(): ExecutionResult {
+        return try {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return ExecutionResult.Failure("No flashlight found")
+            Thread {
+                try {
+                    for (i in 0 until 8) {
+                        cameraManager.setTorchMode(cameraId, true)
+                        Thread.sleep(120)
+                        cameraManager.setTorchMode(cameraId, false)
+                        Thread.sleep(120)
+                    }
+                    cameraManager.setTorchMode(cameraId, true)
+                } catch (_: Exception) {}
+            }.start()
+            ExecutionResult.Success("SOS Strobe flashlight activated!")
+        } catch (e: Exception) {
+            ExecutionResult.Failure("SOS Strobe failed: ${e.localizedMessage}")
+        }
+    }
+
+    private fun callEmergency(number: String = "999"): ExecutionResult {
+        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        return ExecutionResult.Success("Opening Emergency Dialer: $number")
+    }
+
+    private fun openQrScanner(): ExecutionResult {
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            ExecutionResult.Success("QR / Camera scanner opened")
+        } catch (_: Exception) {
+            openApp("camera")
+        }
+    }
+
+    private fun openDndSettings(): ExecutionResult {
+        return openSystemSetting(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS, "Do Not Disturb Settings")
+    }
+
+    private fun openBatterySaver(): ExecutionResult {
+        return openSystemSetting(Settings.ACTION_BATTERY_SAVER_SETTINGS, "Battery Saver Settings")
+    }
+
+    private fun readExactTime(): ExecutionResult {
+        val sdf = SimpleDateFormat("h:mm:ss a, EEEE, MMMM d, yyyy", Locale.getDefault())
+        val formatted = sdf.format(Date())
+        return ExecutionResult.Success("Current time: $formatted")
+    }
+
+    private fun getWeatherQuick(): ExecutionResult {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=live+weather+today")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        return ExecutionResult.Success("Opening live weather forecast")
     }
 }

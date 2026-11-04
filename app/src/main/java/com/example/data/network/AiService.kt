@@ -30,16 +30,17 @@ data class AiResponse(
 class AiService(private val preferences: AppPreferences) {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(8, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private val systemPrompt = """
-        You are Aether AI, an Autonomous Android AI Agent with full device execution capabilities, multi-step workflow planning, and 100+ native actions.
-        Languages supported: English, Bengali (বাংলা), Hindi (हिन्दी), Arabic, or any requested language. Keep conversational replies crisp, warm, and natural for voice speaking (1-2 sentences).
+        You are Aether AI, an Autonomous Ultra-Fast Android AI Agent with full device execution capabilities, multi-step workflow planning, and 100+ native actions.
+        Languages supported: English, Bengali (বাংলা), Hindi (हिन्दी), Arabic, or any requested language. Keep conversational replies crisp, ultra-concise, and friendly for voice speaking (1-2 sentences maximum for instant speech).
         
         When the user asks you to perform an action or multi-step routine on their phone, output a strict JSON object:
         {
@@ -88,8 +89,15 @@ class AiService(private val preferences: AppPreferences) {
         - "auto_scroll": hands-free auto-scrolling reels, target = seconds interval (e.g. "15")
         - "stop_auto_scroll": stop auto-scrolling
         - "flashlight": target = "on" | "off" | "toggle"
+        - "sos_torch": emergency strobe flashing
+        - "emergency": target = "999" emergency call
+        - "qr_scanner": open QR code scanner
         - "battery": target = "status"
+        - "battery_saver": open battery saver
+        - "dnd": open do not disturb settings
         - "device_info": target = "specs"
+        - "time": speak current exact time
+        - "weather": open live weather forecast
         - "volume_up", "volume_down", "volume_mute", "volume_max"
         - "ringer_silent", "ringer_vibrate", "ringer_normal"
         - "wifi_settings", "bluetooth_settings", "display_settings", "hotspot_settings", "location_settings", "storage_settings"
@@ -113,6 +121,12 @@ class AiService(private val preferences: AppPreferences) {
         recentHistory: List<Pair<String, String>> = emptyList(),
         screenContext: String? = null
     ): Result<AiResponse> = withContext(Dispatchers.IO) {
+        // 1. Ultra-Fast Zero-Latency Instant Matcher (< 5ms response time!)
+        val instantAction = getInstantMatchResponse(userMessage)
+        if (instantAction != null) {
+            return@withContext Result.success(instantAction)
+        }
+
         val provider = preferences.getProvider()
         val language = preferences.getLanguage()
 
@@ -121,7 +135,7 @@ class AiService(private val preferences: AppPreferences) {
                 append("[Context of current screen text: \"$screenContext\"]\n\n")
             }
             if (language != "en") {
-                append("[Respond in $language language]\n")
+                append("[Respond concisely in $language language]\n")
             }
             append(userMessage)
         }
@@ -133,7 +147,8 @@ class AiService(private val preferences: AppPreferences) {
                 sendGeminiRequest(fullUserPrompt, recentHistory)
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            // Intelligent on-device fallback if offline or network failure
+            Result.success(getFallbackOfflineResponse(userMessage))
         }
     }
 
@@ -232,7 +247,7 @@ class AiService(private val preferences: AppPreferences) {
                     put("model", activeModel)
                     put("messages", messagesArray)
                     put("temperature", 0.3)
-                    put("max_tokens", 800)
+                    put("max_tokens", 220)
                 }
 
                 val request = Request.Builder()
@@ -353,6 +368,155 @@ class AiService(private val preferences: AppPreferences) {
         }
 
         return AiResponse(replyText = trimmed)
+    }
+
+    fun getInstantMatchResponse(userPrompt: String): AiResponse? {
+        val lower = userPrompt.lowercase().trim()
+
+        // 1. Flashlight / Torch
+        if (lower == "torch on" || lower == "flashlight on" || lower == "turn on torch" || lower == "turn on flashlight" ||
+            lower == "light on" || lower.contains("টর্চ জ্বালাও") || lower.contains("ফ্ল্যাশলাইট জ্বালাও") ||
+            lower.contains("টর্চ অন") || lower.contains("লাইট জ্বালাও") || lower.contains("লাইট অন")
+        ) {
+            return AiResponse("Flashlight turned on.", actionType = "flashlight", actionTarget = "on")
+        }
+        if (lower == "torch off" || lower == "flashlight off" || lower == "turn off torch" || lower == "turn off flashlight" ||
+            lower == "light off" || lower.contains("টর্চ বন্ধ") || lower.contains("ফ্ল্যাশলাইট বন্ধ") ||
+            lower.contains("লাইট বন্ধ") || lower.contains("টর্চ নিভাও")
+        ) {
+            return AiResponse("Flashlight turned off.", actionType = "flashlight", actionTarget = "off")
+        }
+
+        // 2. SOS Strobe Torch
+        if (lower.contains("sos") || lower.contains("strobe") || lower.contains("এস ও এস") || lower.contains("এসওএস") || lower.contains("বিপদ বাতি")) {
+            return AiResponse("Activating high-intensity emergency SOS strobe beacon.", actionType = "sos_torch")
+        }
+
+        // 3. Emergency 999 Call
+        if (lower == "emergency" || lower == "call 999" || lower == "999" || lower == "জরুরি" || lower.contains("পুলিশ ডাকো") || lower.contains("অ্যাম্বুলেন্স")) {
+            return AiResponse("Opening emergency dialer with 999.", actionType = "emergency", actionTarget = "999")
+        }
+
+        // 4. Time & Clock
+        if (lower == "time" || lower == "what time is it" || lower == "current time" ||
+            lower.contains("সময় কত") || lower.contains("কয়টা বাজে") || lower.contains("টাইম কত") || lower.contains("এখন কয়টা")
+        ) {
+            return AiResponse("Checking exact current time and date.", actionType = "time")
+        }
+
+        // 5. Live Weather
+        if (lower == "weather" || lower == "current weather" || lower == "forecast" ||
+            lower.contains("আবহাওয়া") || lower.contains("আজকের আবহাওয়া") || lower.contains("বৃষ্টি হবে") || lower.contains("তাপমাত্রা কত")
+        ) {
+            return AiResponse("Opening live weather radar and forecast.", actionType = "weather")
+        }
+
+        // 6. QR & Barcode Scanner
+        if (lower.contains("qr code") || lower.contains("qr scanner") || lower.contains("কিউআর") || lower.contains("কিউ আর") || lower.contains("বারকোড") || lower.contains("স্ক্যানার")) {
+            return AiResponse("Opening Camera QR and barcode scanner.", actionType = "qr_scanner")
+        }
+
+        // 7. Battery Saver
+        if (lower.contains("battery saver") || lower.contains("ব্যাটারি সেভার") || lower.contains("চার্জ বাঁচাও") || lower.contains("পাওয়ার সেভার")) {
+            return AiResponse("Opening Battery Saver optimization settings.", actionType = "battery_saver")
+        }
+
+        // 8. Do Not Disturb (DND)
+        if (lower == "dnd" || lower.contains("do not disturb") || lower.contains("ডিএনডি") || lower.contains("বিরক্ত করবেন না") || lower.contains("বিরক্ত করবে না")) {
+            return AiResponse("Opening Do Not Disturb priority settings.", actionType = "dnd")
+        }
+
+        // 9. Battery Status
+        if (lower == "battery" || lower == "battery status" || lower.contains("চার্জ কত") || lower.contains("ব্যাটারি কত") || lower.contains("ব্যাটারি স্ট্যাটাস")) {
+            return AiResponse("Checking battery health, percentage, and charging state.", actionType = "battery", actionTarget = "status")
+        }
+
+        // 10. Volume Controls
+        if (lower == "volume up" || lower.contains("আওয়াজ বাড়াও") || lower.contains("ভলিউম বাড়াও") || lower.contains("শব্দ বাড়াও")) {
+            return AiResponse("Increasing media volume.", actionType = "volume_up")
+        }
+        if (lower == "volume down" || lower.contains("আওয়াজ কমাও") || lower.contains("ভলিউম কমাও") || lower.contains("শব্দ কমাও")) {
+            return AiResponse("Decreasing media volume.", actionType = "volume_down")
+        }
+        if (lower == "mute" || lower.contains("মিউট") || lower.contains("শব্দ বন্ধ")) {
+            return AiResponse("Muting device audio.", actionType = "volume_mute")
+        }
+
+        // 11. Ringer Modes
+        if (lower == "silent" || lower.contains("সাইলেন্ট") || lower.contains("নীরব")) {
+            return AiResponse("Setting ringer mode to Silent.", actionType = "ringer_silent")
+        }
+        if (lower == "vibrate" || lower.contains("ভাইব্রেশন") || lower.contains("ভাইব্রেট")) {
+            return AiResponse("Setting ringer mode to Vibrate.", actionType = "ringer_vibrate")
+        }
+
+        // 12. Screenshot & Screen Lock
+        if (lower == "screenshot" || lower.contains("স্ক্রিনশট") || lower.contains("ছবি তোল স্ক্রিন")) {
+            return AiResponse("Taking screen capture.", actionType = "screenshot")
+        }
+        if (lower == "lock" || lower == "lock screen" || lower.contains("স্ক্রিন লক") || lower.contains("ফোন লক")) {
+            return AiResponse("Locking device screen.", actionType = "lock_screen")
+        }
+
+        // 13. System Toggles / Settings
+        if (lower == "wifi" || lower == "wi-fi" || lower.contains("ওয়াইফাই") || lower.contains("ওয়াই ফাই")) {
+            return AiResponse("Opening Wi-Fi settings.", actionType = "wifi_settings")
+        }
+        if (lower == "bluetooth" || lower.contains("ব্লুটুথ")) {
+            return AiResponse("Opening Bluetooth settings.", actionType = "bluetooth_settings")
+        }
+        if (lower.contains("quick settings") || lower.contains("কুইক সেটিংস")) {
+            return AiResponse("Opening Quick Settings panel.", actionType = "quick_settings")
+        }
+        if (lower.contains("notification") || lower.contains("নোটিফিকেশন")) {
+            return AiResponse("Opening Notifications shade.", actionType = "notifications")
+        }
+
+        // 14. Camera & Gallery
+        if (lower == "camera" || lower.contains("ক্যামেরা খোল") || lower.contains("ক্যামেরা অন")) {
+            return AiResponse("Opening camera.", actionType = "camera")
+        }
+        if (lower == "gallery" || lower.contains("গ্যালারি খোল") || lower.contains("ছবি দেখাও")) {
+            return AiResponse("Opening photo gallery.", actionType = "gallery")
+        }
+
+        // 15. Creator / Developer info
+        if (lower.contains("developer") || lower.contains("creator") || lower.contains("মালিক") || lower.contains("বানিয়েছে") || lower.contains("কে বানিয়েছে") || lower.contains("sabbir") || lower.contains("সাব্বির")) {
+            return AiResponse(
+                "এই Aether AI এজেন্টটি তৈরি করেছেন Sabbir (SRSabbir)!\n" +
+                "👤 ফেসবুক আইডি: Siddik9980 (fb.com/Siddik9980)\n" +
+                "📄 ফেসবুক পেজ: SRSabbir\n" +
+                "✈️ টেলিগ্রাম: @SRSabbir (t.me/SRSabbir)\n" +
+                "🎥 ইউটিউব: @SRSabbir9980 (youtube.com/@SRSabbir9980)"
+            )
+        }
+
+        // 16. Jokes (বাংলা ও ইংরেজি)
+        if (lower.contains("joke") || lower.contains("জোকস") || lower.contains("কৌতুক") || lower.contains("হাসাও") || lower.contains("হাসির কথা")) {
+            val jokes = listOf(
+                "শিক্ষক: বলো তো বল্টু, পৃথিবীতে সবচেয়ে বুদ্ধিমান প্রাণী কোনটি?\nবল্টু: স্যার, অবশ্যই আমার বউ! কারণ সে কথা না বলেও আমাকে সব বুঝিয়ে দিতে পারে! 😆",
+                "স্ত্রী: শুনছো, পাশের বাসার ভাবি নতুন শাড়ি কিনেছে, আমাকেও কিনে দাও!\nস্বামী: তুমি কি কখনো দেখেছো সিংহী অন্য হরিণের চামড়া দেখে বায়না করেছে? তুমি তো আমার বাঘিনী! 🦁😂",
+                "ডাক্তার: আপনার চশমার পাওয়ার তো ঠিকই আছে, তাহলে মাথা ঘোরে কেন?\nরোগী: ডাক্তারবাবু, চশমা পরে ব্যাংক অ্যাকাউন্টের ব্যালেন্স দেখলেই মাথা ঘুরে ওঠে! 😅"
+            )
+            return AiResponse(jokes.random())
+        }
+
+        // 17. Motivation (অনুপ্রেরণা)
+        if (lower.contains("motivation") || lower.contains("অনুপ্রেরণা") || lower.contains("মন খারাপ") || lower.contains("উৎসাহ")) {
+            val quotes = listOf(
+                "\"কখনও হাল ছেড়ো না, আজকের দিনটি কঠিন হতে পারে, কাল হয়তো আরও কঠিন হবে, কিন্তু পরশু অবশ্যই নতুন সূর্য উঠবে!\" — নিজের ওপর বিশ্বাস রাখুন, আপনি সফল হবেন। ✨",
+                "\"সাফল্য কোনো কাকতালীয় ব্যাপার নয়। এটি কঠিন পরিশ্রম, অধ্যবসায়, শেখা ও ত্যাগের ফসল!\" — এগিয়ে যান!",
+                "\"ছোট ছোট পদক্ষেপই একদিন বড় অর্জনের রূপ নেয়। প্রতিটি দিনকে নিজের সেরা দিন হিসেবে তৈরি করুন!\" 💪"
+            )
+            return AiResponse(quotes.random())
+        }
+
+        // 18. Quick Math
+        if (lower.matches(Regex("^[0-9\\s\\+\\-\\*/%÷x\\(\\)\\.]+$")) && (lower.contains("+") || lower.contains("-") || lower.contains("*") || lower.contains("/") || lower.contains("x") || lower.contains("÷"))) {
+            return AiResponse("Calculating expression.", actionType = "math", actionTarget = lower)
+        }
+
+        return null
     }
 
     private fun getFallbackOfflineResponse(userPrompt: String): AiResponse {
@@ -661,9 +825,44 @@ class AiService(private val preferences: AppPreferences) {
             lower.contains("go back") || lower.contains("ব্যাক") -> {
                 AiResponse("Going back.", actionType = "go_back")
             }
+            // Emergency & Strobe
+            lower.contains("sos") || lower.contains("strobe") || lower.contains("এসওএস") || lower.contains("এস ও এস") -> {
+                AiResponse("Activating emergency SOS strobe flashlight beacon.", actionType = "sos_torch")
+            }
+            lower.contains("emergency") || lower.contains("999") || lower.contains("৯৯৯") || lower.contains("জরুরি") || lower.contains("বিপদ") -> {
+                AiResponse("Launching emergency 999 hotline dialer.", actionType = "emergency", actionTarget = "999")
+            }
+            // Time & Weather
+            lower.contains("time") || lower.contains("সময়") || lower.contains("কয়টা বাজে") || lower.contains("টাইম") -> {
+                AiResponse("Checking exact current time and date.", actionType = "time")
+            }
+            lower.contains("weather") || lower.contains("আবহাওয়া") || lower.contains("বৃষ্টি") || lower.contains("তাপমাত্রা") -> {
+                AiResponse("Fetching current weather forecast and temperature.", actionType = "weather")
+            }
+            // QR Scanner
+            lower.contains("qr") || lower.contains("কিউআর") || lower.contains("স্ক্যানার") || lower.contains("বারকোড") -> {
+                AiResponse("Opening Camera scanner.", actionType = "qr_scanner")
+            }
+            // Battery Saver & DND
+            lower.contains("battery saver") || lower.contains("ব্যাটারি সেভার") || lower.contains("চার্জ বাঁচাও") -> {
+                AiResponse("Opening Battery Saver optimization.", actionType = "battery_saver")
+            }
+            lower.contains("dnd") || lower.contains("do not disturb") || lower.contains("ডিএনডি") || lower.contains("বিরক্ত করবেন না") -> {
+                AiResponse("Opening Do Not Disturb settings.", actionType = "dnd")
+            }
+            // Greetings / Friendly chat
+            lower.contains("hello") || lower.contains("hi") || lower.contains("হ্যালো") || lower.contains("হাই") || lower.contains("সালাম") || lower.contains("নমস্কার") -> {
+                AiResponse("হ্যালো! আমি আপনার স্মার্ট Aether AI এজেন্ট। আমি আপনার ভয়েস বা কমান্ড শুনে ফ্ল্যাশলাইট, কল, ব্যাটারি, অ্যালার্ম, ইউটিউব, হিসাব এবং শত শত কাজ মুহূর্তে সম্পন্ন করতে পারি!")
+            }
+            lower.contains("কেমন আছো") || lower.contains("how are you") -> {
+                AiResponse("আমি খুব ভালো আছি! আপনার যেকোনো কাজ করতে প্রস্তুত। বলুন, আপনার ফোনের জন্য আমি এখন কী করতে পারি?")
+            }
+            lower.contains("ধন্যবাদ") || lower.contains("thank you") || lower.contains("thanks") -> {
+                AiResponse("আপনাকে অনেক ধন্যবাদ! আপনার সেবায় সাহায্য করতে পেরে আমি আনন্দিত।")
+            }
             else -> {
                 AiResponse(
-                    "Hello! Aether AI has 100+ smart device commands and tools ready: 'Turn on flashlight', 'Battery status', 'Screenshot', 'Mute volume', 'Call Mom', 'Set 7 AM alarm', 'Roll dice', 'Generate password', or ask any question in English, বাংলা, or हिन्दी!"
+                    "আমি Aether AI সুপারফাস্ট এজেন্ট! আপনার যেকোনো ডিভাইসের কাজ যেমন: 'টর্চ জ্বালাও', 'কয়টা বাজে', 'আবহাওয়া', 'ব্যাটারি কত', 'স্ক্রিনশট', 'আওয়াজ বাড়াও', '৯৯৯ কল', 'ইউটিউবে গান চালাও', 'অ্যালার্ম দাও' বলতে পারেন অথবা যেকোনো প্রশ্ন জিজ্ঞাসা করুন!"
                 )
             }
         }
